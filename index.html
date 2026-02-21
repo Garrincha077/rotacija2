@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Rotacija Sektora</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -466,6 +467,7 @@
 
 <nav>
   <button class="nav-btn active" onclick="showTab('unos')">[ Unos ]</button>
+  <button class="nav-btn" onclick="showTab('ai')">[ AI + Finviz ]</button>
   <button class="nav-btn" onclick="showTab('rang')">[ Rang Tablica ]</button>
   <button class="nav-btn" onclick="showTab('vizual')">[ Vizualizacije ]</button>
   <button class="nav-btn" onclick="showTab('signali')">[ Signali ]</button>
@@ -505,7 +507,26 @@
     <div class="btn-row">
       <button class="btn btn-primary" onclick="saveEntry()">Spremi unos</button>
       <button class="btn btn-secondary" onclick="clearForm()">Resetiraj formu</button>
-      <button class="btn btn-secondary" onclick="pasteFromClipboard()">Uvezi iz clipboard-a</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Ručni unos industrija (Finviz)</div>
+    <div class="btn-row" style="margin-bottom:12px">
+      <input type="text" id="industrySearch" placeholder="Filtriraj industrije..." style="max-width:280px" oninput="filterIndustryGrid()">
+      <input type="text" id="newIndustryName" placeholder="Dodaj novu industriju">
+      <button class="btn btn-secondary btn-sm" onclick="addIndustryToUniverse()">Dodaj industriju</button>
+    </div>
+    <div style="max-height:420px;overflow:auto;border:1px solid var(--border);padding:8px;border-radius:4px;background:var(--bg3)">
+      <div class="sector-grid" id="industryGrid">
+        <div class="grid-header" style="text-align:left">Industrija</div>
+        <div class="grid-header">Tjedno</div>
+        <div class="grid-header">Mjesečno</div>
+        <div class="grid-header">Tromjesečno</div>
+        <div class="grid-header">Polugodišnje</div>
+        <div class="grid-header">Godišnje</div>
+        <div class="grid-header">YTD</div>
+      </div>
     </div>
   </div>
 
@@ -521,12 +542,102 @@
 </div>
 
 <!-- ═══════════════════════════════════════════════════════ -->
+<!-- TAB: AI + FINVIZ                                        -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div id="tab-ai" class="tab-panel">
+  <div class="card">
+    <div class="card-title">AI unos iz Finviz teksta</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div>
+        <div class="form-label">Tip uvoza</div>
+        <select id="aiImportType" onchange="generateAiPrompt()">
+          <option value="sectors">Sektori (11 sektora)</option>
+          <option value="industries">Industrije (dinamična lista)</option>
+        </select>
+      </div>
+      <div>
+        <div class="form-label">AI model (free API opcije)</div>
+        <select id="aiModel" onchange="generateAiPrompt()"></select>
+      </div>
+    </div>
+    <div style="margin-top:12px">
+      <div class="form-label">Kopiraj ovaj prompt u AI</div>
+      <textarea id="aiPrompt" style="width:100%;height:140px;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:10px;font-family:'JetBrains Mono',monospace;font-size:12px" readonly></textarea>
+    </div>
+    <div class="btn-row" style="margin-top:12px">
+      <button class="btn btn-secondary btn-sm" onclick="generateAiPrompt()">Osvježi prompt</button>
+      <button class="btn btn-secondary btn-sm" onclick="copyAiPrompt()">Kopiraj prompt</button>
+    </div>
+    <div style="margin-top:16px">
+      <div class="form-label">AI izlaz ili direktni copy sa Finviz-a</div>
+      <textarea id="aiRawInput" placeholder="Zalijepi tablicu/tekst (ime + 6 postotaka po retku)..." style="width:100%;height:180px;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:10px;font-family:'JetBrains Mono',monospace;font-size:12px"></textarea>
+    </div>
+    <div class="btn-row" style="margin-top:12px">
+      <button class="btn btn-primary" onclick="importAiData()">Uvezi podatke</button>
+      <button class="btn btn-secondary" onclick="document.getElementById('aiRawInput').value=''">Očisti tekst</button>
+    </div>
+    <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px">
+      <div class="form-label">Upload screenshot (clip) za AI/OCR ekstrakciju</div>
+      <input type="file" id="aiImageFile" accept="image/*">
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn btn-secondary btn-sm" onclick="extractFromScreenshot()">Extract iz screenshota</button>
+      </div>
+    </div>
+
+    <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px">
+      <div class="form-label">AI dialog (pitaj bilo što)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <input type="password" id="aiApiKey" placeholder="API key (npr. OpenRouter key)">
+        <input type="text" id="aiSystemPrompt" placeholder="System prompt (opcionalno)">
+      </div>
+      <textarea id="aiQuestion" placeholder="Upiši pitanje za AI..." style="width:100%;height:100px;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:10px;font-family:'JetBrains Mono',monospace;font-size:12px"></textarea>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn btn-primary btn-sm" onclick="askAiQuestion()">Pošalji AI upit</button>
+      </div>
+      <textarea id="aiAnswer" placeholder="Odgovor će se pojaviti ovdje..." style="margin-top:10px;width:100%;height:160px;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:10px;font-family:'JetBrains Mono',monospace;font-size:12px" readonly></textarea>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Industrije – zadnji uvoz</div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Industrija</th>
+            <th>Tjedno</th><th>Mjesečno</th><th>3 Mjes.</th><th>6 Mjes.</th><th>Godišnje</th><th>YTD</th>
+          </tr>
+        </thead>
+        <tbody id="industryBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Free AI modeli (API)</div>
+    <div style="font-size:13px;line-height:1.8;color:var(--text-dim)">
+      <p><span class="text-amber mono">OpenRouter</span>: meta-llama/llama-3.3-70b-instruct:free, mistralai/mistral-7b-instruct:free, google/gemma-2-9b-it:free</p>
+      <p><span class="text-amber mono">Groq</span>: llama-3.1-8b-instant, llama-3.3-70b-versatile (free tier API)</p>
+      <p><span class="text-amber mono">Google AI Studio</span>: Gemini 1.5 Flash (free quota preko API ključa)</p>
+      <p><span class="text-amber mono">Hugging Face Inference API</span>: više open-source modela s free tierom</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
 <!-- TAB: RANG TABLICA                                       -->
 <!-- ═══════════════════════════════════════════════════════ -->
 <div id="tab-rang" class="tab-panel">
   <div class="card">
     <div class="card-title">Rang tablica sektora</div>
     <div class="flex gap-12 mb-16" style="flex-wrap:wrap;align-items:center">
+      <div>
+        <div class="form-label">Tip praćenja</div>
+        <select id="rankEntityType" onchange="renderRankTable()" style="width:220px">
+          <option value="sectors">Sektori</option>
+          <option value="industries">Industrije</option>
+        </select>
+      </div>
       <div>
         <div class="form-label">Odaberi tjedan</div>
         <select id="weekSelect" onchange="renderRankTable()" style="width:260px"></select>
@@ -539,7 +650,7 @@
       <table id="rankTable">
         <thead>
           <tr>
-            <th onclick="rankSort('sektor')">Sektor <span class="sort-arrow" id="sa-sektor"></span></th>
+            <th id="rankNameHead" onclick="rankSort('sektor')">Sektor <span class="sort-arrow" id="sa-sektor"></span></th>
             <th onclick="rankSort('tjedno')">Tjedno <span class="sort-arrow" id="sa-tjedno"></span></th>
             <th onclick="rankSort('miesecno')">Miesečno <span class="sort-arrow" id="sa-miesecno"></span></th>
             <th onclick="rankSort('tromj')">3 Mjes. <span class="sort-arrow" id="sa-tromj"></span></th>
@@ -565,6 +676,13 @@
 <div id="tab-vizual" class="tab-panel">
   <div class="card">
     <div class="card-title">Odabir prikaza</div>
+    <div style="margin-bottom:12px;max-width:280px">
+      <div class="form-label">Tip praćenja</div>
+      <select id="vizEntityType" onchange="buildEntitySelects();renderCharts()">
+        <option value="sectors">Sektori</option>
+        <option value="industries">Industrije</option>
+      </select>
+    </div>
     <div class="period-tabs" id="periodTabs">
       <div class="period-tab active" onclick="setVizPeriod('tjedno',this)">Tjedno</div>
       <div class="period-tab" onclick="setVizPeriod('miesecno',this)">Miesečno</div>
@@ -575,7 +693,7 @@
     </div>
     <div class="flex gap-12" style="flex-wrap:wrap;align-items:center;margin-bottom:12px">
       <div>
-        <div class="form-label">Odaberi sektor(e) za trend</div>
+        <div class="form-label" id="vizTrendLabel">Odaberi sektor(e) za trend</div>
         <select id="sectorSelect" multiple style="height:80px;width:280px;font-size:12px">
         </select>
       </div>
@@ -601,7 +719,7 @@
     <div class="card-title">Usporedba rokova – zadnji tjedan (Radar)</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
       <div>
-        <div class="form-label" style="margin-bottom:8px">Odaberi sektor za radar</div>
+        <div class="form-label" style="margin-bottom:8px" id="vizRadarLabel">Odaberi sektor za radar</div>
         <select id="radarSectorSelect" onchange="renderRadar()" style="width:100%"></select>
       </div>
       <div></div>
@@ -616,6 +734,13 @@
 <div id="tab-signali" class="tab-panel">
   <div class="card">
     <div class="card-title">Parametri signala rotacije</div>
+    <div style="margin-bottom:12px;max-width:280px">
+      <div class="form-label">Tip praćenja</div>
+      <select id="signalEntityType" onchange="renderSignals()">
+        <option value="sectors">Sektori</option>
+        <option value="industries">Industrije</option>
+      </select>
+    </div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:16px">
       <div>
         <div class="form-label">Min. tjedno (%) za signal</div>
@@ -634,17 +759,17 @@
   </div>
 
   <div class="card">
-    <div class="card-title">⚠ Signali rotacije – kratkoročni oporavak u dugoročno slabim sektorima</div>
+    <div class="card-title" id="signalTitle">⚠ Signali rotacije – kratkoročni oporavak u dugoročno slabim sektorima</div>
     <div id="signalOutput"></div>
   </div>
 
   <div class="card">
-    <div class="card-title">Rang konzistentnosti – zadnja 4 tjedna</div>
+    <div class="card-title" id="consistencyTitle">Rang konzistentnosti – zadnja 4 tjedna</div>
     <div class="table-wrapper">
       <table id="consistencyTable">
         <thead>
           <tr>
-            <th>Sektor</th>
+            <th id="consistencyNameHead">Sektor</th>
             <th>Prj. rang (tj.)</th>
             <th>Prj. rang (mj.)</th>
             <th>Prj. rang (3mj.)</th>
@@ -697,6 +822,43 @@ const PERIODI = [
   { key: 'ytd',       label: 'YTD' }
 ];
 
+const AI_MODELS = [
+  { id: 'meta-llama/llama-3.3-70b-instruct:free', label: 'Llama 3.3 70B (OpenRouter free)' },
+  { id: 'mistralai/mistral-7b-instruct:free', label: 'Mistral 7B Instruct (OpenRouter free)' },
+  { id: 'google/gemma-2-9b-it:free', label: 'Gemma 2 9B IT (OpenRouter free)' },
+  { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant (Groq free tier)' },
+  { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Google AI Studio free quota)' }
+];
+
+
+
+const DEFAULT_INDUSTRIES = [
+  'Advertising Agencies','Aerospace & Defense','Agricultural Inputs','Airlines','Airports & Air Services','Aluminum',
+  'Apparel Manufacturing','Apparel Retail','Asset Management','Auto & Truck Dealerships','Auto Manufacturers','Auto Parts',
+  'Banks - Diversified','Banks - Regional','Beverages - Brewers','Beverages - Non-Alcoholic','Beverages - Wineries & Distilleries',
+  'Biotechnology','Broadcasting','Building Materials','Building Products & Equipment','Business Equipment & Supplies',
+  'Capital Markets','Chemicals','Coking Coal','Communication Equipment','Computer Hardware','Confectioners',
+  'Conglomerates','Consulting Services','Consumer Electronics','Credit Services','Department Stores','Diagnostics & Research',
+  'Discount Stores','Drug Manufacturers - General','Drug Manufacturers - Specialty & Generic','Education & Training Services',
+  'Electrical Equipment & Parts','Electronic Components','Electronic Gaming & Multimedia','Engineering & Construction',
+  'Entertainment','Farm & Heavy Construction Machinery','Farm Products','Financial Data & Stock Exchanges','Food Distribution',
+  'Footwear & Accessories','Furnishings, Fixtures & Appliances','Gambling','Gold','Grocery Stores','Health Information Services',
+  'Healthcare Plans','Home Improvement Retail','Household & Personal Products','Industrial Distribution','Information Technology Services',
+  'Infrastructure Operations','Insurance - Diversified','Insurance - Life','Insurance - Property & Casualty','Insurance Brokers',
+  'Internet Content & Information','Internet Retail','Leisure','Lodging','Luxury Goods','Medical Care Facilities',
+  'Medical Devices','Medical Distribution','Metal Fabrication','Mortgage Finance','Oil & Gas Drilling','Oil & Gas E&P',
+  'Oil & Gas Equipment & Services','Oil & Gas Integrated','Oil & Gas Midstream','Packaged Foods','Packaging & Containers',
+  'Paper & Paper Products','Personal Services','Pharmaceutical Retailers','Pollution & Treatment Controls','Publishing',
+  'Railroads','Real Estate - Development','Real Estate - Diversified','Real Estate Services','REIT - Industrial','REIT - Office',
+  'REIT - Residential','REIT - Retail','Rental & Leasing Services','Resorts & Casinos','Restaurants','Scientific & Technical Instruments',
+  'Semiconductor Equipment & Materials','Semiconductors','Software - Application','Software - Infrastructure','Solar',
+  'Specialty Business Services','Specialty Chemicals','Specialty Industrial Machinery','Specialty Retail','Staffing & Employment Services',
+  'Steel','Telecom Services','Thermal Coal','Travel Services','Trucking','Uranium','Utilities - Diversified',
+  'Utilities - Independent Power Producers','Utilities - Regulated Electric','Utilities - Regulated Gas','Utilities - Regulated Water',
+  'Waste Management'
+];
+const INDUSTRY_LIST_KEY = 'sektorRotacija_industries_v1';
+
 const STORAGE_KEY = 'sektorRotacija_v2';
 let sortRankBy = 'tjedno';
 let sortDir = -1;
@@ -724,8 +886,12 @@ function init() {
   d.value = today.toISOString().split('T')[0];
 
   buildSectorGrid();
-  buildSectorSelects();
+  buildIndustryGrid();
+  buildEntitySelects();
+  buildAiModels();
+  generateAiPrompt();
   updateStats();
+  renderIndustryTable();
   updateClock();
   setInterval(updateClock, 1000);
 }
@@ -756,18 +922,98 @@ function buildSectorGrid() {
   });
 }
 
-function buildSectorSelects() {
+function getIndustryUniverse() {
+  try {
+    const fromStorage = JSON.parse(localStorage.getItem(INDUSTRY_LIST_KEY) || 'null');
+    if (Array.isArray(fromStorage) && fromStorage.length) return fromStorage;
+  } catch(e) {}
+  return [...DEFAULT_INDUSTRIES];
+}
+
+function saveIndustryUniverse(list) {
+  localStorage.setItem(INDUSTRY_LIST_KEY, JSON.stringify([...new Set(list)].sort((a,b)=>a.localeCompare(b))));
+}
+
+function addIndustryToUniverse() {
+  const input = document.getElementById('newIndustryName');
+  const name = input.value.trim();
+  if (!name) return;
+  const list = getIndustryUniverse();
+  if (!list.some(i => i.toLowerCase() === name.toLowerCase())) {
+    list.push(name);
+    saveIndustryUniverse(list);
+    buildIndustryGrid();
+  }
+  input.value = '';
+}
+
+function buildIndustryGrid() {
+  const grid = document.getElementById('industryGrid');
+  if (!grid) return;
+  grid.querySelectorAll('.sector-row').forEach(r => r.remove());
+  getIndustryUniverse().forEach(ind => {
+    const row = document.createElement('div');
+    row.className = 'sector-row industry-row';
+    row.dataset.name = ind.toLowerCase();
+    row.innerHTML = `<div class="sector-name">${ind}</div>` + PERIODI.map(p => `
+      <div class="sector-input"><input type="number" step="0.01" placeholder="0.00" id="ind_${sanitize(ind)}_${p.key}"></div>
+    `).join('');
+    grid.appendChild(row);
+  });
+}
+
+function filterIndustryGrid() {
+  const q = (document.getElementById('industrySearch')?.value || '').toLowerCase();
+  document.querySelectorAll('#industryGrid .industry-row').forEach(r => {
+    r.style.display = r.dataset.name.includes(q) ? 'contents' : 'none';
+  });
+}
+
+function getEntityType(controlId, fallback = 'sectors') {
+  return document.getElementById(controlId)?.value || fallback;
+}
+
+function getEntityMap(entry, type) {
+  return type === 'industries' ? (entry.industrije || {}) : (entry.sektori || {});
+}
+
+function getEntityUniverse(type, data = getData()) {
+  if (type === 'sectors') return [...SEKTORI];
+  const names = new Set();
+  data.forEach(e => Object.keys(e.industrije || {}).forEach(n => names.add(n)));
+  getIndustryUniverse().forEach(n => names.add(n));
+  return [...names].sort((a,b) => a.localeCompare(b));
+}
+
+function buildEntitySelects() {
   const sel = document.getElementById('sectorSelect');
   const rsel = document.getElementById('radarSectorSelect');
+  const type = getEntityType('vizEntityType');
+  const entities = getEntityUniverse(type).filter(name => {
+    const data = getData();
+    return data.some(e => {
+      const m = getEntityMap(e, type)[name];
+      return m && PERIODI.some(p => m[p.key] !== null && m[p.key] !== undefined);
+    });
+  });
   sel.innerHTML = '';
   rsel.innerHTML = '';
-  SEKTORI.forEach(s => {
+  entities.forEach(s => {
     const o1 = new Option(s, s);
     const o2 = new Option(s, s);
     o1.selected = true;
     sel.appendChild(o1);
     rsel.appendChild(o2);
   });
+  const noun = type === 'industries' ? 'industrije' : 'sektor(e)';
+  document.getElementById('vizTrendLabel').textContent = `Odaberi ${noun} za trend`;
+  document.getElementById('vizRadarLabel').textContent = `Odaberi ${type === 'industries' ? 'industriju' : 'sektor'} za radar`;
+}
+
+function buildAiModels() {
+  const sel = document.getElementById('aiModel');
+  sel.innerHTML = '';
+  AI_MODELS.forEach(m => sel.appendChild(new Option(m.label, m.id)));
 }
 
 function sanitize(s) {
@@ -782,12 +1028,20 @@ function saveEntry() {
   const label = document.getElementById('inputLabel').value;
   if (!date) { showToast('Odaberi datum!', true); return; }
 
-  const entry = { id: Date.now(), datum: date, label: label || date, sektori: {} };
+  const entry = { id: Date.now(), datum: date, label: label || date, sektori: {}, industrije: {} };
   SEKTORI.forEach(s => {
     entry.sektori[s] = {};
     PERIODI.forEach(p => {
       const val = parseFloat(document.getElementById(`inp_${sanitize(s)}_${p.key}`)?.value);
       entry.sektori[s][p.key] = isNaN(val) ? null : val;
+    });
+  });
+
+  getIndustryUniverse().forEach(ind => {
+    entry.industrije[ind] = {};
+    PERIODI.forEach(p => {
+      const val = parseFloat(document.getElementById(`ind_${sanitize(ind)}_${p.key}`)?.value);
+      entry.industrije[ind][p.key] = isNaN(val) ? null : val;
     });
   });
 
@@ -815,10 +1069,209 @@ function clearForm() {
     });
   });
   document.getElementById('inputLabel').value = '';
+  getIndustryUniverse().forEach(ind => {
+    PERIODI.forEach(p => {
+      const el = document.getElementById(`ind_${sanitize(ind)}_${p.key}`);
+      if (el) el.value = '';
+    });
+  });
 }
 
-function pasteFromClipboard() {
-  showToast('Uvoz iz clipboard-a: nije podržan u svim browserima. Koristite ručni unos.', true);
+function generateAiPrompt() {
+  const type = document.getElementById('aiImportType')?.value || 'sectors';
+  const model = document.getElementById('aiModel')?.value || AI_MODELS[0].id;
+  const target = type === 'industries' ? 'industrije' : 'sektore';
+  const names = type === 'industries'
+    ? 'Zadrži originalna imena industrija iz Finviz tablice.'
+    : `Koristi točno ove nazive sektora: ${SEKTORI.join(', ')}.`;
+  const prompt = `Model: ${model}\nPretvori Finviz tablicu u čisti tekst za unos.\n\nPravila:\n1) Vrati samo retke bez dodatnog objašnjenja.\n2) Svaki red: Naziv|tjedno|miesecno|tromj|polugod|godisnje|ytd\n3) Postotke vrati kao brojeve bez % znaka (npr. -2.31).\n4) Ako podatak nedostaje stavi null.\n5) Radi za: ${target}. ${names}`;
+  document.getElementById('aiPrompt').value = prompt;
+}
+
+function copyAiPrompt() {
+  const txt = document.getElementById('aiPrompt').value;
+  navigator.clipboard.writeText(txt)
+    .then(() => showToast('Prompt kopiran.'))
+    .catch(() => showToast('Clipboard nije dostupan. Označi i kopiraj ručno.', true));
+}
+
+function importAiData() {
+  const raw = document.getElementById('aiRawInput').value;
+  if (!raw.trim()) { showToast('Zalijepi Finviz/AI tekst.', true); return; }
+  const type = document.getElementById('aiImportType').value;
+  const parsed = parseRows(raw);
+  if (parsed.length === 0) { showToast('Nema valjanih redaka za uvoz.', true); return; }
+
+  if (type === 'sectors') {
+    let mapped = 0;
+    parsed.forEach(r => {
+      const sector = SEKTORI.find(s => sanitize(s) === sanitize(r.name));
+      if (!sector) return;
+      PERIODI.forEach((p, i) => {
+        const input = document.getElementById(`inp_${sanitize(sector)}_${p.key}`);
+        if (input) input.value = r.values[i] ?? '';
+      });
+      mapped++;
+    });
+    showToast(`Uvezeno ${mapped} sektora u formu.`);
+    showTab('unos');
+    return;
+  }
+
+  const list = getIndustryUniverse();
+  parsed.forEach(r => {
+    if (!list.some(i => i.toLowerCase() === r.name.toLowerCase())) list.push(r.name);
+  });
+  saveIndustryUniverse(list);
+  buildIndustryGrid();
+
+  parsed.forEach(r => {
+    const normalized = getIndustryUniverse().find(i => i.toLowerCase() === r.name.toLowerCase()) || r.name;
+    PERIODI.forEach((p, i) => {
+      const input = document.getElementById(`ind_${sanitize(normalized)}_${p.key}`);
+      if (input) input.value = r.values[i] ?? '';
+    });
+  });
+
+  const data = getData();
+  if (data.length > 0) {
+    const last = data[data.length - 1];
+    last.industrije = last.industrije || {};
+    parsed.forEach(r => {
+      last.industrije[r.name] = {};
+      PERIODI.forEach((p, i) => last.industrije[r.name][p.key] = r.values[i]);
+    });
+    saveData(data);
+  }
+
+  renderIndustryTable();
+  showToast(`Uvezeno ${parsed.length} industrija i popunjena forma u tabu Unos.`);
+}
+
+async function extractFromScreenshot() {
+  const fileInput = document.getElementById('aiImageFile');
+  const file = fileInput?.files?.[0];
+  if (!file) { showToast('Odaberi screenshot datoteku.', true); return; }
+  if (!window.Tesseract) { showToast('OCR library nije učitana.', true); return; }
+
+  showToast('OCR obrada screenshota u tijeku...');
+  try {
+    const result = await Tesseract.recognize(file, 'eng');
+    const text = result?.data?.text || '';
+    document.getElementById('aiRawInput').value = text;
+    showToast('OCR gotov. Ako parser ne prepozna redove, klikni Osvježi prompt i provuci kroz AI pa uvezi.');
+  } catch (e) {
+    showToast('Greška OCR-a: ' + e.message, true);
+  }
+}
+
+function parseNumericToken(token) {
+  if (!token) return null;
+  const t = String(token).replace('%', '').replace(',', '.').trim();
+  if (!/^[-+]?\d+(?:\.\d+)?$/.test(t)) return null;
+  const n = parseFloat(t);
+  return Number.isNaN(n) ? null : n;
+}
+
+function parseRows(raw) {
+  return raw
+    .split('\n')
+    .map(l => l.trim())
+    .filter(Boolean)
+    .map(line => {
+      // standard AI format: name|v1|...|v6
+      if (line.includes('|')) {
+        const chunks = line.split('|').map(c => c.trim()).filter(Boolean);
+        if (chunks.length >= 7) {
+          const name = chunks[0];
+          const values = chunks.slice(1, 7).map(v => /^null$/i.test(v) ? null : parseNumericToken(v));
+          if (values.some(v => v !== null)) return { name, values };
+        }
+      }
+
+      // OCR/noisy text format: extract last 6 numeric tokens in a line
+      const tokens = line.split(/\s+/).filter(Boolean);
+      const numericIdx = [];
+      tokens.forEach((t, i) => {
+        if (parseNumericToken(t) !== null) numericIdx.push(i);
+      });
+      if (numericIdx.length < 6) return null;
+
+      const take = numericIdx.slice(-6);
+      const nameTokens = tokens.slice(0, take[0]);
+      const name = nameTokens.join(' ').replace(/^[^a-zA-Z]+/, '').trim();
+      if (!name) return null;
+
+      const values = take.map(i => parseNumericToken(tokens[i]));
+      if (values.every(v => v === null)) return null;
+      return { name, values };
+    })
+    .filter(Boolean);
+}
+
+async function askAiQuestion() {
+  const apiKey = document.getElementById('aiApiKey').value.trim();
+  const question = document.getElementById('aiQuestion').value.trim();
+  const model = document.getElementById('aiModel')?.value || AI_MODELS[0].id;
+  const systemPrompt = document.getElementById('aiSystemPrompt').value.trim();
+  const answerEl = document.getElementById('aiAnswer');
+
+  if (!question) { showToast('Upiši pitanje za AI.', true); return; }
+  if (!apiKey) {
+    showToast('Unesi API key za AI dialog.', true);
+    return;
+  }
+
+  answerEl.value = 'AI odgovara...';
+  try {
+    const messages = [];
+    if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+    messages.push({ role: 'user', content: question });
+
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ model, messages, temperature: 0.2 })
+    });
+
+    if (!res.ok) {
+      const errTxt = await res.text();
+      throw new Error(`AI API greška (${res.status}): ${errTxt.slice(0, 200)}`);
+    }
+
+    const json = await res.json();
+    const content = json?.choices?.[0]?.message?.content || 'Nema odgovora.';
+    answerEl.value = content;
+    showToast('AI odgovor primljen.');
+  } catch (e) {
+    answerEl.value = '';
+    showToast(e.message || 'Greška AI dialoga.', true);
+  }
+}
+
+function renderIndustryTable() {
+  const body = document.getElementById('industryBody');
+  const data = getData();
+  const last = data[data.length - 1];
+  if (!last?.industrije || Object.keys(last.industrije).length === 0) {
+    body.innerHTML = '<tr><td colspan="7" class="empty-state">Nema uvezenih industrija</td></tr>';
+    return;
+  }
+
+  body.innerHTML = Object.entries(last.industrije)
+    .map(([name, vals]) => `<tr>
+      <td>${name}</td>
+      <td>${valCell(vals.tjedno)}</td>
+      <td>${valCell(vals.miesecno)}</td>
+      <td>${valCell(vals.tromj)}</td>
+      <td>${valCell(vals.polugod)}</td>
+      <td>${valCell(vals.godisnje)}</td>
+      <td>${valCell(vals.ytd)}</td>
+    </tr>`)
+    .join('');
 }
 
 // ═══════════════════════════════════════════════════════
@@ -866,18 +1319,26 @@ function populateWeekSelect() {
 
 function renderRankTable() {
   const data = getData();
+  const type = getEntityType('rankEntityType');
+  const head = document.getElementById('rankNameHead');
+  if (head) head.childNodes[0].textContent = type === 'industries' ? 'Industrija ' : 'Sektor ';
   const id = parseInt(document.getElementById('weekSelect').value);
   const entry = data.find(e => e.id === id);
   if (!entry) { document.getElementById('rankBody').innerHTML = '<tr><td colspan="7" class="empty-state">Nema podataka</td></tr>'; return; }
 
-  let rows = SEKTORI.map(s => ({
+  const sourceMap = getEntityMap(entry, type);
+  const entities = type === 'industries'
+    ? Object.keys(sourceMap).filter(k => PERIODI.some(p => sourceMap[k]?.[p.key] !== null && sourceMap[k]?.[p.key] !== undefined))
+    : SEKTORI;
+
+  let rows = entities.map(s => ({
     sektor: s,
-    tjedno: entry.sektori[s]?.tjedno ?? null,
-    miesecno: entry.sektori[s]?.miesecno ?? null,
-    tromj: entry.sektori[s]?.tromj ?? null,
-    polugod: entry.sektori[s]?.polugod ?? null,
-    godisnje: entry.sektori[s]?.godisnje ?? null,
-    ytd: entry.sektori[s]?.ytd ?? null,
+    tjedno: sourceMap[s]?.tjedno ?? null,
+    miesecno: sourceMap[s]?.miesecno ?? null,
+    tromj: sourceMap[s]?.tromj ?? null,
+    polugod: sourceMap[s]?.polugod ?? null,
+    godisnje: sourceMap[s]?.godisnje ?? null,
+    ytd: sourceMap[s]?.ytd ?? null,
   }));
 
   rows.sort((a,b) => {
@@ -981,6 +1442,7 @@ function selectAllSectors() {
 function renderCharts() {
   const data = getData();
   if (data.length === 0) return;
+  const type = getEntityType('vizEntityType');
 
   const sel = document.getElementById('sectorSelect');
   const chosen = Array.from(sel.selectedOptions).map(o => o.value);
@@ -997,8 +1459,8 @@ function renderCharts() {
       labels,
       datasets: chosen.map((s,i) => ({
         label: s,
-        data: data.map(e => e.sektori[s]?.[vizPeriod] ?? null),
-        borderColor: COLORS[SEKTORI.indexOf(s) % COLORS.length],
+        data: data.map(e => getEntityMap(e, type)[s]?.[vizPeriod] ?? null),
+        borderColor: COLORS[i % COLORS.length],
         backgroundColor: 'transparent',
         borderWidth: 2,
         pointRadius: 3,
@@ -1011,11 +1473,12 @@ function renderCharts() {
 
   // Bar chart – last entry
   const last = data[data.length - 1];
-  const barVals = SEKTORI.map(s => last.sektori[s]?.[vizPeriod] ?? 0);
+  const entities = chosen.length ? chosen : getEntityUniverse(type, data).slice(0, 30);
+  const barVals = entities.map(s => getEntityMap(last, type)[s]?.[vizPeriod] ?? 0);
   charts.bar = new Chart(document.getElementById('barChart'), {
     type: 'bar',
     data: {
-      labels: SEKTORI.map(s => s.replace(' ','\n')),
+      labels: entities.map(s => s.replace(' ','\n')),
       datasets: [{
         data: barVals,
         backgroundColor: barVals.map(v => v >= 0 ? 'rgba(34,211,160,0.7)' : 'rgba(244,63,94,0.7)'),
@@ -1033,6 +1496,7 @@ function renderRadar() {
   const data = getData();
   if (data.length === 0) return;
   const last = data[data.length - 1];
+  const type = getEntityType('vizEntityType');
   const s = document.getElementById('radarSectorSelect').value;
   if (!s) return;
 
@@ -1043,7 +1507,7 @@ function renderRadar() {
       labels: PERIODI.map(p => p.label),
       datasets: [{
         label: s,
-        data: PERIODI.map(p => last.sektori[s]?.[p.key] ?? 0),
+        data: PERIODI.map(p => getEntityMap(last, type)[s]?.[p.key] ?? 0),
         borderColor: '#f59e0b',
         backgroundColor: 'rgba(245,158,11,0.15)',
         pointBackgroundColor: '#f59e0b',
@@ -1125,6 +1589,12 @@ function barOptions() {
 function renderSignals() {
   const data = getData();
   if (data.length === 0) { document.getElementById('signalOutput').innerHTML = '<div class="empty-state">Nema podataka</div>'; return; }
+  const type = getEntityType('signalEntityType');
+  document.getElementById('signalTitle').textContent = type === 'industries'
+    ? '⚠ Signali rotacije – kratkoročni oporavak u dugoročno slabim industrijama'
+    : '⚠ Signali rotacije – kratkoročni oporavak u dugoročno slabim sektorima';
+  document.getElementById('consistencyTitle').textContent = `Rang konzistentnosti ${type === 'industries' ? 'industrija' : 'sektora'} – zadnja 4 tjedna`;
+  document.getElementById('consistencyNameHead').textContent = type === 'industries' ? 'Industrija' : 'Sektor';
 
   const sTj   = parseFloat(document.getElementById('sigTjedno').value);
   const sMj   = parseFloat(document.getElementById('sigMjesecno').value);
@@ -1132,9 +1602,12 @@ function renderSignals() {
 
   const last = data[data.length - 1];
   const signals = [];
+  const entities = type === 'industries'
+    ? Object.keys(last.industrije || {})
+    : SEKTORI;
 
-  SEKTORI.forEach(s => {
-    const sec = last.sektori[s];
+  entities.forEach(s => {
+    const sec = getEntityMap(last, type)[s];
     if (!sec) return;
     const tj = sec.tjedno ?? 0;
     const mj = sec.miesecno ?? 0;
@@ -1165,36 +1638,38 @@ function renderSignals() {
           <div><div style="color:var(--text-dim);font-size:10px;margin-bottom:2px">YTD</div><div style="${sig.ytd >= 0 ? 'color:var(--green)' : 'color:var(--red)'}">${pct(sig.ytd)}</div></div>
         </div>
         <div style="margin-top:10px;font-size:11px;color:var(--text-dim)">
-          ⚠ Kratkoročni impuls u dugoročno slabom sektoru – pazi na lažni proboj / kratkotrajna rotacija
+          ⚠ Kratkoročni impuls u dugoročno slabom ${type === 'industries' ? 'segmentu/industriji' : 'sektoru'} – pazi na lažni proboj / kratkotrajna rotacija
         </div>
       </div>
     `).join('');
   }
 
   // Consistency table
-  renderConsistency(data);
+  renderConsistency(data, type);
 }
 
-function renderConsistency(data) {
+function renderConsistency(data, type = 'sectors') {
   const last4 = data.slice(-4);
   if (last4.length < 2) return;
+  const last = last4[last4.length - 1];
+  const entities = type === 'industries' ? Object.keys(last.industrije || {}) : SEKTORI;
 
   const body = document.getElementById('consistencyBody');
-  body.innerHTML = SEKTORI.map(s => {
+  body.innerHTML = entities.map(s => {
     const tjRanks = last4.map(e => {
-      const vals = SEKTORI.map(x => e.sektori[x]?.tjedno ?? -9999);
+      const vals = entities.map(x => getEntityMap(e, type)[x]?.tjedno ?? -9999);
       vals.sort((a,b) => b-a);
-      return vals.indexOf(e.sektori[s]?.tjedno ?? -9999) + 1;
+      return vals.indexOf(getEntityMap(e, type)[s]?.tjedno ?? -9999) + 1;
     });
     const mjRanks = last4.map(e => {
-      const vals = SEKTORI.map(x => e.sektori[x]?.miesecno ?? -9999);
+      const vals = entities.map(x => getEntityMap(e, type)[x]?.miesecno ?? -9999);
       vals.sort((a,b) => b-a);
-      return vals.indexOf(e.sektori[s]?.miesecno ?? -9999) + 1;
+      return vals.indexOf(getEntityMap(e, type)[s]?.miesecno ?? -9999) + 1;
     });
     const tRanks = last4.map(e => {
-      const vals = SEKTORI.map(x => e.sektori[x]?.tromj ?? -9999);
+      const vals = entities.map(x => getEntityMap(e, type)[x]?.tromj ?? -9999);
       vals.sort((a,b) => b-a);
-      return vals.indexOf(e.sektori[s]?.tromj ?? -9999) + 1;
+      return vals.indexOf(getEntityMap(e, type)[s]?.tromj ?? -9999) + 1;
     });
 
     const avgTj = avg(tjRanks);
@@ -1253,6 +1728,20 @@ function loadEntry(id) {
       if (el) el.value = entry.sektori[s]?.[p.key] ?? '';
     });
   });
+  if (entry.industrije) {
+    const merged = [...getIndustryUniverse()];
+    Object.keys(entry.industrije).forEach(name => {
+      if (!merged.some(i => i.toLowerCase() === name.toLowerCase())) merged.push(name);
+    });
+    saveIndustryUniverse(merged);
+    buildIndustryGrid();
+    Object.entries(entry.industrije).forEach(([name, vals]) => {
+      PERIODI.forEach(p => {
+        const el = document.getElementById(`ind_${sanitize(name)}_${p.key}`);
+        if (el) el.value = vals?.[p.key] ?? '';
+      });
+    });
+  }
   showTab('unos');
   showToast(`Unos ${entry.datum} učitan za uređivanje`);
 }
@@ -1377,8 +1866,10 @@ function showTab(tab) {
     if (b.getAttribute('onclick')?.includes(`'${tab}'`)) b.classList.add('active');
   });
 
+  if (tab === 'unos') { buildIndustryGrid(); }
   if (tab === 'rang') { populateWeekSelect(); renderRankTable(); }
-  if (tab === 'vizual') { renderCharts(); }
+  if (tab === 'ai') { generateAiPrompt(); renderIndustryTable(); }
+  if (tab === 'vizual') { buildEntitySelects(); renderCharts(); }
   if (tab === 'signali') { renderSignals(); }
   if (tab === 'povijest') { renderHistory(); }
 }
