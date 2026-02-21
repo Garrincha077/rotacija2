@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Rotacija Sektora</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -510,6 +511,26 @@
   </div>
 
   <div class="card">
+    <div class="card-title">Ručni unos industrija (Finviz)</div>
+    <div class="btn-row" style="margin-bottom:12px">
+      <input type="text" id="industrySearch" placeholder="Filtriraj industrije..." style="max-width:280px" oninput="filterIndustryGrid()">
+      <input type="text" id="newIndustryName" placeholder="Dodaj novu industriju">
+      <button class="btn btn-secondary btn-sm" onclick="addIndustryToUniverse()">Dodaj industriju</button>
+    </div>
+    <div style="max-height:420px;overflow:auto;border:1px solid var(--border);padding:8px;border-radius:4px;background:var(--bg3)">
+      <div class="sector-grid" id="industryGrid">
+        <div class="grid-header" style="text-align:left">Industrija</div>
+        <div class="grid-header">Tjedno</div>
+        <div class="grid-header">Mjesečno</div>
+        <div class="grid-header">Tromjesečno</div>
+        <div class="grid-header">Polugodišnje</div>
+        <div class="grid-header">Godišnje</div>
+        <div class="grid-header">YTD</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
     <div class="card-title">Upute za unos</div>
     <div style="font-size:13px;line-height:1.8;color:var(--text-dim)">
       <p>1. Idi na <span class="text-amber mono">finviz.com/groups.ashx</span> → odaberi sektor</p>
@@ -554,6 +575,13 @@
     <div class="btn-row" style="margin-top:12px">
       <button class="btn btn-primary" onclick="importAiData()">Uvezi podatke</button>
       <button class="btn btn-secondary" onclick="document.getElementById('aiRawInput').value=''">Očisti tekst</button>
+    </div>
+    <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px">
+      <div class="form-label">Upload screenshot (clip) za AI/OCR ekstrakciju</div>
+      <input type="file" id="aiImageFile" accept="image/*">
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn btn-secondary btn-sm" onclick="extractFromScreenshot()">Extract iz screenshota</button>
+      </div>
     </div>
   </div>
 
@@ -768,6 +796,35 @@ const AI_MODELS = [
   { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Google AI Studio free quota)' }
 ];
 
+
+
+const DEFAULT_INDUSTRIES = [
+  'Advertising Agencies','Aerospace & Defense','Agricultural Inputs','Airlines','Airports & Air Services','Aluminum',
+  'Apparel Manufacturing','Apparel Retail','Asset Management','Auto & Truck Dealerships','Auto Manufacturers','Auto Parts',
+  'Banks - Diversified','Banks - Regional','Beverages - Brewers','Beverages - Non-Alcoholic','Beverages - Wineries & Distilleries',
+  'Biotechnology','Broadcasting','Building Materials','Building Products & Equipment','Business Equipment & Supplies',
+  'Capital Markets','Chemicals','Coking Coal','Communication Equipment','Computer Hardware','Confectioners',
+  'Conglomerates','Consulting Services','Consumer Electronics','Credit Services','Department Stores','Diagnostics & Research',
+  'Discount Stores','Drug Manufacturers - General','Drug Manufacturers - Specialty & Generic','Education & Training Services',
+  'Electrical Equipment & Parts','Electronic Components','Electronic Gaming & Multimedia','Engineering & Construction',
+  'Entertainment','Farm & Heavy Construction Machinery','Farm Products','Financial Data & Stock Exchanges','Food Distribution',
+  'Footwear & Accessories','Furnishings, Fixtures & Appliances','Gambling','Gold','Grocery Stores','Health Information Services',
+  'Healthcare Plans','Home Improvement Retail','Household & Personal Products','Industrial Distribution','Information Technology Services',
+  'Infrastructure Operations','Insurance - Diversified','Insurance - Life','Insurance - Property & Casualty','Insurance Brokers',
+  'Internet Content & Information','Internet Retail','Leisure','Lodging','Luxury Goods','Medical Care Facilities',
+  'Medical Devices','Medical Distribution','Metal Fabrication','Mortgage Finance','Oil & Gas Drilling','Oil & Gas E&P',
+  'Oil & Gas Equipment & Services','Oil & Gas Integrated','Oil & Gas Midstream','Packaged Foods','Packaging & Containers',
+  'Paper & Paper Products','Personal Services','Pharmaceutical Retailers','Pollution & Treatment Controls','Publishing',
+  'Railroads','Real Estate - Development','Real Estate - Diversified','Real Estate Services','REIT - Industrial','REIT - Office',
+  'REIT - Residential','REIT - Retail','Rental & Leasing Services','Resorts & Casinos','Restaurants','Scientific & Technical Instruments',
+  'Semiconductor Equipment & Materials','Semiconductors','Software - Application','Software - Infrastructure','Solar',
+  'Specialty Business Services','Specialty Chemicals','Specialty Industrial Machinery','Specialty Retail','Staffing & Employment Services',
+  'Steel','Telecom Services','Thermal Coal','Travel Services','Trucking','Uranium','Utilities - Diversified',
+  'Utilities - Independent Power Producers','Utilities - Regulated Electric','Utilities - Regulated Gas','Utilities - Regulated Water',
+  'Waste Management'
+];
+const INDUSTRY_LIST_KEY = 'sektorRotacija_industries_v1';
+
 const STORAGE_KEY = 'sektorRotacija_v2';
 let sortRankBy = 'tjedno';
 let sortDir = -1;
@@ -795,6 +852,7 @@ function init() {
   d.value = today.toISOString().split('T')[0];
 
   buildSectorGrid();
+  buildIndustryGrid();
   buildSectorSelects();
   buildAiModels();
   generateAiPrompt();
@@ -830,6 +888,53 @@ function buildSectorGrid() {
   });
 }
 
+function getIndustryUniverse() {
+  try {
+    const fromStorage = JSON.parse(localStorage.getItem(INDUSTRY_LIST_KEY) || 'null');
+    if (Array.isArray(fromStorage) && fromStorage.length) return fromStorage;
+  } catch(e) {}
+  return [...DEFAULT_INDUSTRIES];
+}
+
+function saveIndustryUniverse(list) {
+  localStorage.setItem(INDUSTRY_LIST_KEY, JSON.stringify([...new Set(list)].sort((a,b)=>a.localeCompare(b))));
+}
+
+function addIndustryToUniverse() {
+  const input = document.getElementById('newIndustryName');
+  const name = input.value.trim();
+  if (!name) return;
+  const list = getIndustryUniverse();
+  if (!list.some(i => i.toLowerCase() === name.toLowerCase())) {
+    list.push(name);
+    saveIndustryUniverse(list);
+    buildIndustryGrid();
+  }
+  input.value = '';
+}
+
+function buildIndustryGrid() {
+  const grid = document.getElementById('industryGrid');
+  if (!grid) return;
+  grid.querySelectorAll('.sector-row').forEach(r => r.remove());
+  getIndustryUniverse().forEach(ind => {
+    const row = document.createElement('div');
+    row.className = 'sector-row industry-row';
+    row.dataset.name = ind.toLowerCase();
+    row.innerHTML = `<div class="sector-name">${ind}</div>` + PERIODI.map(p => `
+      <div class="sector-input"><input type="number" step="0.01" placeholder="0.00" id="ind_${sanitize(ind)}_${p.key}"></div>
+    `).join('');
+    grid.appendChild(row);
+  });
+}
+
+function filterIndustryGrid() {
+  const q = (document.getElementById('industrySearch')?.value || '').toLowerCase();
+  document.querySelectorAll('#industryGrid .industry-row').forEach(r => {
+    r.style.display = r.dataset.name.includes(q) ? 'contents' : 'none';
+  });
+}
+
 function buildSectorSelects() {
   const sel = document.getElementById('sectorSelect');
   const rsel = document.getElementById('radarSectorSelect');
@@ -862,12 +967,20 @@ function saveEntry() {
   const label = document.getElementById('inputLabel').value;
   if (!date) { showToast('Odaberi datum!', true); return; }
 
-  const entry = { id: Date.now(), datum: date, label: label || date, sektori: {} };
+  const entry = { id: Date.now(), datum: date, label: label || date, sektori: {}, industrije: {} };
   SEKTORI.forEach(s => {
     entry.sektori[s] = {};
     PERIODI.forEach(p => {
       const val = parseFloat(document.getElementById(`inp_${sanitize(s)}_${p.key}`)?.value);
       entry.sektori[s][p.key] = isNaN(val) ? null : val;
+    });
+  });
+
+  getIndustryUniverse().forEach(ind => {
+    entry.industrije[ind] = {};
+    PERIODI.forEach(p => {
+      const val = parseFloat(document.getElementById(`ind_${sanitize(ind)}_${p.key}`)?.value);
+      entry.industrije[ind][p.key] = isNaN(val) ? null : val;
     });
   });
 
@@ -895,6 +1008,12 @@ function clearForm() {
     });
   });
   document.getElementById('inputLabel').value = '';
+  getIndustryUniverse().forEach(ind => {
+    PERIODI.forEach(p => {
+      const el = document.getElementById(`ind_${sanitize(ind)}_${p.key}`);
+      if (el) el.value = '';
+    });
+  });
 }
 
 function generateAiPrompt() {
@@ -938,17 +1057,51 @@ function importAiData() {
     return;
   }
 
-  const data = getData();
-  if (data.length === 0) { showToast('Prvo spremi barem jedan tjedni unos sektora.', true); return; }
-  const last = data[data.length - 1];
-  last.industrije = {};
+  const list = getIndustryUniverse();
   parsed.forEach(r => {
-    last.industrije[r.name] = {};
-    PERIODI.forEach((p, i) => last.industrije[r.name][p.key] = r.values[i]);
+    if (!list.some(i => i.toLowerCase() === r.name.toLowerCase())) list.push(r.name);
   });
-  saveData(data);
+  saveIndustryUniverse(list);
+  buildIndustryGrid();
+
+  parsed.forEach(r => {
+    const normalized = getIndustryUniverse().find(i => i.toLowerCase() === r.name.toLowerCase()) || r.name;
+    PERIODI.forEach((p, i) => {
+      const input = document.getElementById(`ind_${sanitize(normalized)}_${p.key}`);
+      if (input) input.value = r.values[i] ?? '';
+    });
+  });
+
+  const data = getData();
+  if (data.length > 0) {
+    const last = data[data.length - 1];
+    last.industrije = last.industrije || {};
+    parsed.forEach(r => {
+      last.industrije[r.name] = {};
+      PERIODI.forEach((p, i) => last.industrije[r.name][p.key] = r.values[i]);
+    });
+    saveData(data);
+  }
+
   renderIndustryTable();
-  showToast(`Spremljeno ${parsed.length} industrija na zadnji zapis.`);
+  showToast(`Uvezeno ${parsed.length} industrija i popunjena forma u tabu Unos.`);
+}
+
+async function extractFromScreenshot() {
+  const fileInput = document.getElementById('aiImageFile');
+  const file = fileInput?.files?.[0];
+  if (!file) { showToast('Odaberi screenshot datoteku.', true); return; }
+  if (!window.Tesseract) { showToast('OCR library nije učitana.', true); return; }
+
+  showToast('OCR obrada screenshota u tijeku...');
+  try {
+    const result = await Tesseract.recognize(file, 'eng');
+    const text = result?.data?.text || '';
+    document.getElementById('aiRawInput').value = text;
+    showToast('OCR gotov. Provjeri i klikni "Uvezi podatke".');
+  } catch (e) {
+    showToast('Greška OCR-a: ' + e.message, true);
+  }
 }
 
 function parseRows(raw) {
@@ -1426,6 +1579,20 @@ function loadEntry(id) {
       if (el) el.value = entry.sektori[s]?.[p.key] ?? '';
     });
   });
+  if (entry.industrije) {
+    const merged = [...getIndustryUniverse()];
+    Object.keys(entry.industrije).forEach(name => {
+      if (!merged.some(i => i.toLowerCase() === name.toLowerCase())) merged.push(name);
+    });
+    saveIndustryUniverse(merged);
+    buildIndustryGrid();
+    Object.entries(entry.industrije).forEach(([name, vals]) => {
+      PERIODI.forEach(p => {
+        const el = document.getElementById(`ind_${sanitize(name)}_${p.key}`);
+        if (el) el.value = vals?.[p.key] ?? '';
+      });
+    });
+  }
   showTab('unos');
   showToast(`Unos ${entry.datum} učitan za uređivanje`);
 }
@@ -1550,6 +1717,7 @@ function showTab(tab) {
     if (b.getAttribute('onclick')?.includes(`'${tab}'`)) b.classList.add('active');
   });
 
+  if (tab === 'unos') { buildIndustryGrid(); }
   if (tab === 'rang') { populateWeekSelect(); renderRankTable(); }
   if (tab === 'ai') { generateAiPrompt(); renderIndustryTable(); }
   if (tab === 'vizual') { renderCharts(); }
