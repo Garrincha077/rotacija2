@@ -466,6 +466,7 @@
 
 <nav>
   <button class="nav-btn active" onclick="showTab('unos')">[ Unos ]</button>
+  <button class="nav-btn" onclick="showTab('ai')">[ AI + Finviz ]</button>
   <button class="nav-btn" onclick="showTab('rang')">[ Rang Tablica ]</button>
   <button class="nav-btn" onclick="showTab('vizual')">[ Vizualizacije ]</button>
   <button class="nav-btn" onclick="showTab('signali')">[ Signali ]</button>
@@ -505,7 +506,6 @@
     <div class="btn-row">
       <button class="btn btn-primary" onclick="saveEntry()">Spremi unos</button>
       <button class="btn btn-secondary" onclick="clearForm()">Resetiraj formu</button>
-      <button class="btn btn-secondary" onclick="pasteFromClipboard()">Uvezi iz clipboard-a</button>
     </div>
   </div>
 
@@ -516,6 +516,69 @@
       <p>2. Kopiraj performanse za svaki sektor u odgovarajuća polja (tjedno, mjes., 3mj., 6mj., 1god., YTD)</p>
       <p>3. Unosi su negativni za pad (npr. -2.5), pozitivni za rast (npr. 3.1)</p>
       <p>4. Podatke spremi jednom tjedno (npr. svaki petak)</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!-- TAB: AI + FINVIZ                                        -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div id="tab-ai" class="tab-panel">
+  <div class="card">
+    <div class="card-title">AI unos iz Finviz teksta</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div>
+        <div class="form-label">Tip uvoza</div>
+        <select id="aiImportType" onchange="generateAiPrompt()">
+          <option value="sectors">Sektori (11 sektora)</option>
+          <option value="industries">Industrije (dinamična lista)</option>
+        </select>
+      </div>
+      <div>
+        <div class="form-label">AI model (free API opcije)</div>
+        <select id="aiModel" onchange="generateAiPrompt()"></select>
+      </div>
+    </div>
+    <div style="margin-top:12px">
+      <div class="form-label">Kopiraj ovaj prompt u AI</div>
+      <textarea id="aiPrompt" style="width:100%;height:140px;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:10px;font-family:'JetBrains Mono',monospace;font-size:12px" readonly></textarea>
+    </div>
+    <div class="btn-row" style="margin-top:12px">
+      <button class="btn btn-secondary btn-sm" onclick="generateAiPrompt()">Osvježi prompt</button>
+      <button class="btn btn-secondary btn-sm" onclick="copyAiPrompt()">Kopiraj prompt</button>
+    </div>
+    <div style="margin-top:16px">
+      <div class="form-label">AI izlaz ili direktni copy sa Finviz-a</div>
+      <textarea id="aiRawInput" placeholder="Zalijepi tablicu/tekst (ime + 6 postotaka po retku)..." style="width:100%;height:180px;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:10px;font-family:'JetBrains Mono',monospace;font-size:12px"></textarea>
+    </div>
+    <div class="btn-row" style="margin-top:12px">
+      <button class="btn btn-primary" onclick="importAiData()">Uvezi podatke</button>
+      <button class="btn btn-secondary" onclick="document.getElementById('aiRawInput').value=''">Očisti tekst</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Industrije – zadnji uvoz</div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Industrija</th>
+            <th>Tjedno</th><th>Mjesečno</th><th>3 Mjes.</th><th>6 Mjes.</th><th>Godišnje</th><th>YTD</th>
+          </tr>
+        </thead>
+        <tbody id="industryBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Free AI modeli (API)</div>
+    <div style="font-size:13px;line-height:1.8;color:var(--text-dim)">
+      <p><span class="text-amber mono">OpenRouter</span>: meta-llama/llama-3.3-70b-instruct:free, mistralai/mistral-7b-instruct:free, google/gemma-2-9b-it:free</p>
+      <p><span class="text-amber mono">Groq</span>: llama-3.1-8b-instant, llama-3.3-70b-versatile (free tier API)</p>
+      <p><span class="text-amber mono">Google AI Studio</span>: Gemini 1.5 Flash (free quota preko API ključa)</p>
+      <p><span class="text-amber mono">Hugging Face Inference API</span>: više open-source modela s free tierom</p>
     </div>
   </div>
 </div>
@@ -697,6 +760,14 @@ const PERIODI = [
   { key: 'ytd',       label: 'YTD' }
 ];
 
+const AI_MODELS = [
+  { id: 'meta-llama/llama-3.3-70b-instruct:free', label: 'Llama 3.3 70B (OpenRouter free)' },
+  { id: 'mistralai/mistral-7b-instruct:free', label: 'Mistral 7B Instruct (OpenRouter free)' },
+  { id: 'google/gemma-2-9b-it:free', label: 'Gemma 2 9B IT (OpenRouter free)' },
+  { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant (Groq free tier)' },
+  { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Google AI Studio free quota)' }
+];
+
 const STORAGE_KEY = 'sektorRotacija_v2';
 let sortRankBy = 'tjedno';
 let sortDir = -1;
@@ -725,7 +796,10 @@ function init() {
 
   buildSectorGrid();
   buildSectorSelects();
+  buildAiModels();
+  generateAiPrompt();
   updateStats();
+  renderIndustryTable();
   updateClock();
   setInterval(updateClock, 1000);
 }
@@ -768,6 +842,12 @@ function buildSectorSelects() {
     sel.appendChild(o1);
     rsel.appendChild(o2);
   });
+}
+
+function buildAiModels() {
+  const sel = document.getElementById('aiModel');
+  sel.innerHTML = '';
+  AI_MODELS.forEach(m => sel.appendChild(new Option(m.label, m.id)));
 }
 
 function sanitize(s) {
@@ -817,8 +897,101 @@ function clearForm() {
   document.getElementById('inputLabel').value = '';
 }
 
-function pasteFromClipboard() {
-  showToast('Uvoz iz clipboard-a: nije podržan u svim browserima. Koristite ručni unos.', true);
+function generateAiPrompt() {
+  const type = document.getElementById('aiImportType')?.value || 'sectors';
+  const model = document.getElementById('aiModel')?.value || AI_MODELS[0].id;
+  const target = type === 'industries' ? 'industrije' : 'sektore';
+  const names = type === 'industries'
+    ? 'Zadrži originalna imena industrija iz Finviz tablice.'
+    : `Koristi točno ove nazive sektora: ${SEKTORI.join(', ')}.`;
+  const prompt = `Model: ${model}\nPretvori Finviz tablicu u čisti tekst za unos.\n\nPravila:\n1) Vrati samo retke bez dodatnog objašnjenja.\n2) Svaki red: Naziv|tjedno|miesecno|tromj|polugod|godisnje|ytd\n3) Postotke vrati kao brojeve bez % znaka (npr. -2.31).\n4) Ako podatak nedostaje stavi null.\n5) Radi za: ${target}. ${names}`;
+  document.getElementById('aiPrompt').value = prompt;
+}
+
+function copyAiPrompt() {
+  const txt = document.getElementById('aiPrompt').value;
+  navigator.clipboard.writeText(txt)
+    .then(() => showToast('Prompt kopiran.'))
+    .catch(() => showToast('Clipboard nije dostupan. Označi i kopiraj ručno.', true));
+}
+
+function importAiData() {
+  const raw = document.getElementById('aiRawInput').value;
+  if (!raw.trim()) { showToast('Zalijepi Finviz/AI tekst.', true); return; }
+  const type = document.getElementById('aiImportType').value;
+  const parsed = parseRows(raw);
+  if (parsed.length === 0) { showToast('Nema valjanih redaka za uvoz.', true); return; }
+
+  if (type === 'sectors') {
+    let mapped = 0;
+    parsed.forEach(r => {
+      const sector = SEKTORI.find(s => sanitize(s) === sanitize(r.name));
+      if (!sector) return;
+      PERIODI.forEach((p, i) => {
+        const input = document.getElementById(`inp_${sanitize(sector)}_${p.key}`);
+        if (input) input.value = r.values[i] ?? '';
+      });
+      mapped++;
+    });
+    showToast(`Uvezeno ${mapped} sektora u formu.`);
+    showTab('unos');
+    return;
+  }
+
+  const data = getData();
+  if (data.length === 0) { showToast('Prvo spremi barem jedan tjedni unos sektora.', true); return; }
+  const last = data[data.length - 1];
+  last.industrije = {};
+  parsed.forEach(r => {
+    last.industrije[r.name] = {};
+    PERIODI.forEach((p, i) => last.industrije[r.name][p.key] = r.values[i]);
+  });
+  saveData(data);
+  renderIndustryTable();
+  showToast(`Spremljeno ${parsed.length} industrija na zadnji zapis.`);
+}
+
+function parseRows(raw) {
+  return raw
+    .split('\n')
+    .map(l => l.trim())
+    .filter(Boolean)
+    .map(line => {
+      const chunks = line.includes('|')
+        ? line.split('|').map(c => c.trim())
+        : line.split(/\t|\s{2,}/).map(c => c.trim()).filter(Boolean);
+      if (chunks.length < 7) return null;
+      const name = chunks[0];
+      const values = chunks.slice(1, 7).map(v => {
+        if (/^null$/i.test(v)) return null;
+        const n = parseFloat(String(v).replace('%', '').replace(',', '.'));
+        return Number.isNaN(n) ? null : n;
+      });
+      return { name, values };
+    })
+    .filter(Boolean);
+}
+
+function renderIndustryTable() {
+  const body = document.getElementById('industryBody');
+  const data = getData();
+  const last = data[data.length - 1];
+  if (!last?.industrije || Object.keys(last.industrije).length === 0) {
+    body.innerHTML = '<tr><td colspan="7" class="empty-state">Nema uvezenih industrija</td></tr>';
+    return;
+  }
+
+  body.innerHTML = Object.entries(last.industrije)
+    .map(([name, vals]) => `<tr>
+      <td>${name}</td>
+      <td>${valCell(vals.tjedno)}</td>
+      <td>${valCell(vals.miesecno)}</td>
+      <td>${valCell(vals.tromj)}</td>
+      <td>${valCell(vals.polugod)}</td>
+      <td>${valCell(vals.godisnje)}</td>
+      <td>${valCell(vals.ytd)}</td>
+    </tr>`)
+    .join('');
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1378,6 +1551,7 @@ function showTab(tab) {
   });
 
   if (tab === 'rang') { populateWeekSelect(); renderRankTable(); }
+  if (tab === 'ai') { generateAiPrompt(); renderIndustryTable(); }
   if (tab === 'vizual') { renderCharts(); }
   if (tab === 'signali') { renderSignals(); }
   if (tab === 'povijest') { renderHistory(); }
